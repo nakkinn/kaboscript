@@ -1,0 +1,46 @@
+virtual_machine.cpp を確認しました。以下が分析結果です。
+
+  バグ・問題点                                                                                                  
+  1. スクリプト末尾に改行がないと最後の命令が失われる（重大）                                                
+                                                                                                             
+  41-86行目のパーサーは '\n' を検出したときだけ命令を処理します。スクリプトの最後の行が '\n'
+  で終わっていない場合、その命令はパースされません。
+
+  例えば "push const 1\nadd" と渡すと、add は無視されます。
+
+  label $end が最後の行で改行なしだった場合、ラベルが登録されず、goto $end
+  のジャンプ先が不正な値になり、暴走する可能性があります。
+
+  対策: forループ(41行目)の直後に、最後の行が未処理なら処理するコードが必要です。つまり、ループ終了後に
+  seg0[0] != '\0' なら残った seg0/seg1/seg2 を code に格納する処理を追加します。
+
+  2. 境界チェックの不足（軽微）
+
+  - push static / pop static: statics_length に対する範囲チェックなし
+  - push this / pop this / push that / pop that: heap_length に対する範囲チェックなし
+  - push temp / pop temp: 0〜7の範囲チェックなし
+  - call: stack[sp] ～ stack[sp+4] を書き込むとき、sp+4 < stack_length のチェックなし
+  - function: sp += n のオーバーフローチェックなし
+
+  正しいスクリプトなら問題になりませんが、不正な入力で配列外アクセスが起きえます。
+
+  3. 空スクリプト時の未定義動作（軽微）
+
+  code_last が 0 のまま実行ループに入ると、code[0].segment0 が未初期化のまま読まれます。code_last > 0
+  のチェックがあると安全です。
+
+  正常に動作している部分
+
+  - push/pop: 全セグメント（argument, local, static, const, this, that, pointer, temp）正しく動作
+  - 算術・論理: add, sub, mul, neg, eq, gt, lt, and, or, not すべて正しい
+  - 出力: out(sp減少), outstr/outsp/outnl(sp不変) 正しい
+  - goto/ifgo: ラベル位置に飛んだ後 ip++ でラベルの次の命令を実行。正しい
+  - call: フレーム保存順序(return addr, local, argument, this, that)、argument_address と local_address      
+  の設定、ip = functionLine - 1 (ip++で function命令を実行) すべて正しい
+  - function: ローカル変数分 sp を進める。正しい
+  - return: フレーム復元順序（local_address を最後に復元することで読み出しが正しい）、戻り値を argument[0]   
+  に格納、ip = return_address - 1 (ip++で call の次を実行)。正しい
+  - 終了条件: ip >= code_last-1 は label $end が最終行の標準パターンで正しく動作
+
+  結論: 実質的なバグは #1（末尾改行なし問題） のみです。現在のスクリプトが常に '\n'
+  で終わっていれば顕在化しませんが、潜在的に危険です。
