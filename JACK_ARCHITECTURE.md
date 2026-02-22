@@ -1,109 +1,214 @@
 # 高水準言語仕様
 
-VM上で動作する高水準言語の仕様。クラスなし、型は `int` のみ。文字・文字列は今後実装予定。
+VM上で動作する高水準言語の仕様。クラスベースのオブジェクト指向言語。
 
 ## プログラム構造
 
-トップレベルには**関数定義**と**変数宣言**のみ記述できる。関数内で関数を定義することはできない。
+トップレベルには **`class` ブロックのみ**記述できる。エントリーポイントは `Main.main`。
 
 ```
-var counter;
-var table[64];
-
-function add(a, b){
-    return a + b;
-}
-
-function main(){
-    counter = add(1, 2);
-    return 0;
+class Main {
+    function main() {
+        Output.print(42);
+        return 0;
+    }
 }
 ```
 
-- `main` が自動的に呼び出されるエントリーポイントとなる。
-- トップレベルの宣言順序は自由。後方で定義された関数・変数も参照できる（コンパイラが2パスで解決する）。
+- `Main.main` が自動的に呼び出される。
+- クラスの宣言順序は自由。後方で定義されたクラスも参照できる（コンパイラが2パスで解決する）。
+
+---
 
 ## 型
 
 | 型 | 説明 |
 |---|---|
-| `int` | 整数型。唯一のデータ型 |
-| `char` | 未実装 |
-| `string` | 未実装 |
+| `int` | 整数型（プリミティブ） |
+| クラス名 | そのクラスのインスタンスへのヒープアドレス |
 
-真偽値のリテラル（`true`/`false`/`null`）はない。`0`/`1` で代用する。
+型情報はコンパイラが静的に管理し、`obj.method()` の呼び出し先クラスを決定するために使用する。
 
-## 関数定義
+---
 
-全て `function` キーワードで定義する。常に `return expr;` で値を返す。
+## クラス定義
 
 ```
-function add(a, b){
-    return a + b;
+class ClassName {
+    // 変数宣言（field / static）
+    // 関数定義（constructor / method / function）
 }
 ```
 
-- `return expr;` が必須。return文がない場合はコンパイルエラー。
-- 戻り値を使わない関数は慣習として `return 0;` で終わる。
-- 文として呼び出した場合（`add(1, 2);`）、戻り値は暗黙的に捨てられる（VMレベルで `pop temp 0`）。
+---
 
-### 引数
+## 変数の種類
 
-- 引数に型名は付けない。全て `int` として扱う。
-- 配列とスカラーの区別はない。配列はアドレスとして渡される。
+| 種類 | 宣言場所 | VMセグメント | スコープ |
+|---|---|---|---|
+| 引数 | 関数の `()` 内 | `argument` | その関数内 |
+| ローカル変数 | 関数内 | `local` | その関数内（ブロックスコープ） |
+| フィールド変数 | クラス内（修飾子なし） | `this` | そのインスタンス |
+| 静的変数 | クラス内（`static`） | `static` | そのクラス全体（全インスタンス共有） |
 
 ```
-function sum(arr, len){
-    var total = 0;
-    for(var i = 0; i < len; i++){
-        total += arr[i];
-    }
-    return total;
+class Vector {
+    int x;            // field → this 0
+    int y;            // field → this 1
+    static int count; // static → static N（全インスタンス共有）
 }
 ```
+
+### フィールド変数
+
+クラス内でキーワードなしに型名から始まる宣言。初期値なし。
+
+```
+class Counter {
+    int count;
+    int id;
+}
+```
+
+### 静的変数
+
+`static` キーワードを付ける。初期値なし（ゼロ初期化）。プログラム起動時に1つだけ確保される。
+
+```
+class IDGen {
+    static int next;
+}
+```
+
+---
+
+## 関数の種類
+
+関数定義に**返り値の型は書かない**。
+
+### `constructor`
+
+インスタンスを生成して返す。`return this` はコンパイラが自動生成するため記述不要。
+
+```
+constructor new(int arg1, ...) {
+    // フィールドの初期化
+}
+```
+
+**VMへの変換：**
+
+1. `push const フィールド数` → `call $alloc 1` でヒープ確保
+2. `pop pointer 0` で `this` のベースアドレスをセット
+3. フィールドを初期化
+4. `push pointer 0` → `return`（自動生成）
+
+```
+// constructor new(int px, int py) のVMコード
+function Vector.new 0
+push const 2
+call $alloc 1
+pop pointer 0
+push argument 0     // px
+pop this 0          // x = px
+push argument 1     // py
+pop this 1          // y = py
+push pointer 0      // return this（自動生成）
+return
+```
+
+### `method`
+
+インスタンスに属する操作。`this` を介してフィールドにアクセスできる。
+
+```
+method name(int arg1, ...) {
+    // this を使える
+}
+```
+
+**VMへの変換：**
+
+- 呼び出し側がオブジェクトのアドレスを **`argument 0` として自動付与**して渡す
+- メソッド先頭で `push argument 0` → `pop pointer 0` を実行し `this` を確定させる
+- 実引数は `argument 1` から始まる
+
+```
+// v1.getX() の呼び出し側VMコード
+push local 0        // v1 のアドレス（自動付与）
+call Vector.getX 1  // 引数は this の1個
+
+// method getX() のVMコード
+function Vector.getX 0
+push argument 0     // this
+pop pointer 0       // this のベースアドレスをセット
+push this 0         // x フィールドを読む
+return
+```
+
+### `function`
+
+クラスに属するが `this` を持たない静的な関数。インスタンス不要で呼び出せる。
+
+```
+function name(int arg1, ...) {
+    // this は使えない
+}
+```
+
+**VMへの変換：**
+
+- 呼び出し側はオブジェクトのアドレスを追加しない
+- メソッド先頭に `pop pointer 0` は生成されない
+
+```
+// ClassName.func(args) の呼び出し側VMコード
+push const 1
+push const 2
+call IDGen.add 2    // this の付与なし
+```
+
+---
+
+## 呼び出し規則まとめ
+
+| 種類 | 呼び出し構文 | VM上の引数 | 先頭処理 |
+|---|---|---|---|
+| `constructor` | `ClassName.new(args)` | 実引数のみ | `$alloc` → `pop pointer 0` |
+| `method` | `obj.method(args)` | obj + 実引数 | `push argument 0 / pop pointer 0` |
+| `function` | `ClassName.func(args)` | 実引数のみ | なし |
+
+---
 
 ## 変数宣言
 
-### グローバル変数
+### フィールド・静的変数（クラス内）
 
-トップレベルに記述する。VMの `static` セグメントにマッピングされる。
-
-```
-var count;
-var buf[128];
-var limit = 100;
-```
-
-- ゼロ初期化がデフォルト。
-- 定数式による初期化も可能（`var x = 10;`）。
-- 全ての関数からアクセスできる。
-
-### ローカル変数
-
-関数内で宣言する。VMの `local` セグメントにマッピングされる。
+初期値なし。コンストラクタ・関数内で明示的に初期化する。
 
 ```
-function example(){
-    var x;
-    var y = 10;
-    var arr[5];
-    // ...
+class Foo {
+    int x;            // フィールド変数
+    static int total; // 静的変数
+}
+```
+
+### ローカル変数（関数内）
+
+型名 + 変数名で宣言する。初期値を同時に指定することもできる。
+
+```
+function main() {
+    int x;          // 初期化なし（0初期化）
+    int y = 10;     // 初期化あり
+    Vector v;       // クラス型
 }
 ```
 
 - ブロック内での宣言も可能。スコープはそのブロック内に限定される。
-- ブロックを抜けるとスロットは再利用される（ウォーターマーク方式）。
 - 使用する前に宣言が必要。前方参照は不可。
 
-```
-function scoping(){ // return 省略
-    var x = 1;
-    if(x == 1){
-        var y = 2;      // ブロックスコープ
-    }
-    // y はここでは使用不可
-}
-```
+---
 
 ## 変数代入
 
@@ -116,24 +221,47 @@ x -= expr;
 x *= expr;
 ```
 
+---
+
+## メソッド・関数呼び出し
+
+### インスタンスメソッド呼び出し
+
+```
+v1.setX(10);
+obj.method(arg1, arg2);
+```
+
+### static関数・コンストラクタ呼び出し
+
+```
+Vector v = Vector.new(3, 4);
+IDGen.reset();
+```
+
+### 呼び出しの判定ルール
+
+`.` の左辺が型名テーブルに存在する → static呼び出し
+`.` の左辺が変数テーブルに存在する → インスタンスメソッド呼び出し
+
+---
+
 ## 制御構文
 
 ### if-else
 
 ```
-if(x > 0){
+if(x > 0) {
     // ...
-}else{
+} else {
     // ...
 }
 ```
 
-ブロック `{}` を省略して単文も可。
-
 ### while
 
 ```
-while(x > 0){
+while(x > 0) {
     x--;
 }
 ```
@@ -141,12 +269,12 @@ while(x > 0){
 ### for
 
 ```
-for(var i = 0; i < 10; i++){
+for(int i = 0; i < 10; i++) {
     // ...
 }
 ```
 
-初期化・条件・更新はそれぞれ省略可。
+---
 
 ## 演算子
 
@@ -154,70 +282,53 @@ for(var i = 0; i < 10; i++){
 
 | 優先順位 | 演算子 | 結合性 |
 |---|---|---|
-| 1 | `()` `[]` | 左 |
+| 1 | `()` `[]` `.` | 左 |
 | 2 | `-`(単項) `+`(単項) `!` | 右 |
 | 3 | `*` `/` | 左 |
 | 4 | `+` `-` | 左 |
 | 5 | `<` `>` `<=` `>=` | 左 |
 | 6 | `==` `!=` | 左 |
 | 7 | `&&` | 左 |
-| 8 | `||` | 左 |
+| 8 | `\|\|` | 左 |
 
-注: `/` は未実装。
-
-### 算術
-
-| 演算子 | 説明 |
-|---|---|
-| `+` | 加算 |
-| `-` | 減算 |
-| `*` | 乗算 |
-| `/` | 除算（未実装） |
-
-### 比較
-
-| 演算子 | 説明 |
-|---|---|
-| `==` | 等価 |
-| `!=` | 非等価 |
-| `<` | 小なり |
-| `>` | 大なり |
-| `<=` | 以下 |
-| `>=` | 以上 |
-
-### 論理
-
-| 演算子 | 説明 |
-|---|---|
-| `&&` | 論理AND |
-| `\|\|` | 論理OR |
-| `!` | 論理NOT |
-
-### 単項
-
-| 演算子 | 説明 |
-|---|---|
-| `-` | 符号反転 |
-| `+` | 恒等（何もしない） |
+---
 
 ## 配列
 
-ヒープ上に確保される。ローカル変数にはアドレスのみ保持する。VMの `alloc` でメモリを確保する。
+ヒープ上に確保される。変数にはアドレスのみ保持する。
 
 ```
-var arr[10];        // alloc(10) → アドレスをローカルに格納
+int arr[10];        // alloc(10) → アドレスをローカルに格納
 arr[3] = 100;       // 書き込み
-var x = arr[3];     // 読み出し
+int x = arr[3];     // 読み出し
 ```
 
-## 組み込み関数
+---
 
-コンパイラが特別扱いし、VMの命令に直接変換する。通常の関数と同じ構文で呼び出す。
+## 組み込み関数・クラス
 
-| 関数 | 動作 | VM命令 |
-|---|---|---|
-| `print(expr)` | 式の値を数値として出力し、空白を追加 | `push argument 0` → `out` → `outsp` |
-| `newline()` | 改行を出力 | `outnl` |
+| 呼び出し | 動作 |
+|---|---|
+| `Output.print(expr)` | 式の値を数値として出力し、空白を追加 |
+| `Output.newline()` | 改行を出力 |
+
+---
+
+## オブジェクトのメモリレイアウト
+
+インスタンスはヒープ上に確保されたフィールドの列であり、変数にはそのアドレスが格納される。
+
+```
+heap[addr + 0] = x   ← this 0
+heap[addr + 1] = y   ← this 1
+
+Vector v1;  // v1 にはヒープアドレスが入る
+```
+
+`static` フィールドはインスタンスのヒープ領域ではなく VM の `static` セグメントに格納される。
+`static` インデックスはプログラム全体でグローバルに管理され、クラスをまたいで引き継がれる。
+
+---
 
 ## コメント
 
@@ -228,52 +339,84 @@ var x = arr[3];     // 読み出し
    複数行可 */
 ```
 
+---
+
 ## コード例
 
-### フィボナッチ数列
+### Vectorクラス
 
 ```
-function fib(n){
-    if(n <= 1){
-        return n;
+class Vector {
+    int x;
+    int y;
+    static int count;
+
+    constructor new(int px, int py) {
+        x = px;
+        y = py;
+        count++;
     }
-    return fib(n - 1) + fib(n - 2);
-}
 
-function main(){
-    var i = 0;
-    while(i < 10){
-        print(fib(i));
-        i++;
+    method getX() { return x; }
+    method getY() { return y; }
+
+    method add(Vector other) {
+        x += other.getX();
+        y += other.getY();
+        return 0;
     }
-    newline();
-    return 0;
-}
-```
 
-### FizzBuzz
-
-```
-function fizzbuzz(n){
-    var i = 1;
-    while(i <= n){
-        if(i % 15 == 0){
-            print(0);
-        }else if(i % 3 == 0){
-            print(3);
-        }else if(i % 5 == 0){
-            print(5);
-        }else{
-            print(i);
-        }
-        i++;
+    method lengthSq() {
+        return x * x + y * y;
     }
-    newline();
-    return 0;
+
+    function getCount() {
+        return count;
+    }
 }
 
-function main(){
-    fizzbuzz(20);
-    return 0;
+class Main {
+    function main() {
+        Vector v1;
+        Vector v2;
+        v1 = Vector.new(3, 4);
+        v2 = Vector.new(1, 2);
+        v1.add(v2);
+        Output.print(v1.lengthSq());
+        Output.print(Vector.getCount());
+        return 0;
+    }
 }
 ```
+
+### Counterクラス（static変数）
+
+```
+class Counter {
+    static int total;
+    int id;
+
+    constructor new() {
+        total++;
+        id = total;
+    }
+
+    method getId()    { return id; }
+    method getTotal() { return total; }
+}
+
+class Main {
+    function main() {
+        Counter a;
+        Counter b;
+        a = Counter.new();
+        b = Counter.new();
+        Output.print(a.getId());
+        Output.print(b.getId());
+        Output.print(a.getTotal());
+        return 0;
+    }
+}
+```
+
+期待出力: `1 2 2`
