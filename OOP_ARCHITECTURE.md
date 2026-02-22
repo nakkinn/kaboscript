@@ -28,8 +28,8 @@ class ClassName {
 
 ```
 class Vector {
-    field int x;        // this 0
-    field int y;        // this 1
+    int x;        // this 0
+    int y;        // this 1
     static int count;   // static 0（全インスタンス共有）
 }
 ```
@@ -176,9 +176,9 @@ return
 
 ```
 class Vector {
-    field var int x;
-    field var int y;
-    static var int count;
+    int x;
+    int y;
+    static int count;
 
     constructor Vector new(int px, int py){
         x = px;
@@ -211,8 +211,8 @@ class Vector {
 
 class Main {
     function void main(){
-        var Vector v1 = Vector.new(3, 4);
-        var Vector v2 = Vector.new(1, 2);
+        Vector v1 = Vector.new(3, 4);
+        Vector v2 = Vector.new(1, 2);
         v1.add(v2);
         print(v1.lengthSq());
         print(Vector.dot(v1, v2));

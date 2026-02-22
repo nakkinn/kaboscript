@@ -2,7 +2,7 @@
 
 struct VMCode{
     char segment0[10];
-    char segment1[10];
+    char segment1[64];
     char segment2[16];
 };
 

@@ -32,7 +32,7 @@ void VM::run(const char* script, char *dst, int dst_size){
 
     //codeの生成
     char seg0[10] = "";
-    char seg1[10] = "";
+    char seg1[64] = "";
     char seg2[16] = "";
 
     int flag1 = 0;     //0:seg0, 1:seg1, 2:seg2
@@ -50,7 +50,7 @@ void VM::run(const char* script, char *dst, int dst_size){
 
             if(seg0[0] != '\0' && seg0[0] != '#'){
                 my_strcpy(seg0, code[code_last].segment0, 10);
-                my_strcpy(seg1, code[code_last].segment1, 10);
+                my_strcpy(seg1, code[code_last].segment1, 64);
                 my_strcpy(seg2, code[code_last].segment2, 16);
                 code_last++;
             }
@@ -71,7 +71,7 @@ void VM::run(const char* script, char *dst, int dst_size){
                     j++;
                 }
             }else if(flag1 == 1){
-                if(j < 10-1){
+                if(j < 64-1){
                     seg1[j] = script[i];
                     j++;
                 }
