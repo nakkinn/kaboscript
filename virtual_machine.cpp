@@ -221,6 +221,14 @@ void VM::run(const char* script, char *dst, int dst_size){
                 my_strcat(tmp, dst, dst_size);                
                 sp--;
             }
+        }else if( my_streq(code[ip].segment0,"outc") ){
+            if(sp >= 1){
+                char tmp[2];
+                tmp[0] = stack[sp-1];
+                tmp[1] = '\0';
+                my_strcat(tmp, dst, dst_size);                
+                sp--;
+            }
         }else if( my_streq(code[ip].segment0,"outstr") ){
             my_strcat(code[ip].segment1, dst, dst_size);
         }else if( my_streq(code[ip].segment0, "outsp") ){

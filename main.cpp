@@ -12,16 +12,21 @@ goto $end
 )";
 
 const char* vm_footer = R"(
-function Output.print 0
+function Output.printi 0
 push argument 0
 out
-outsp
 push const 0
 return
 
-function Output.newline 0
-outnl
+function Output.printc 0
+push argument 0
+outc
 push const 0
+return
+
+function Memory.alloc 0
+push argument 0
+call $alloc 1
 return
 
 function $alloc 0
@@ -41,46 +46,42 @@ label $end
 const char* jack_script0 = R"(
 
 class Main {
-    function swap(int arr, int i, int j) {
-        int tmp = arr[i];
-        arr[i] = arr[j];
-        arr[j] = tmp;
-        return 0;
-    }
-
-    function sort(int arr, int len) {
-        int i = 0;
-        while(i < len - 1) {
-            int j = 0;
-            int limit = len - i - 1;
-            while(j < limit) {
-                if(arr[j] > arr[j + 1]) {
-                    Main.swap(arr, j, j + 1);
-                }
-                j++;
-            }
-            i++;
-        }
-        return 0;
-    }
-
     function main() {
-        int arr[5];
-        arr[0] = 3;
-        arr[1] = 1;
-        arr[2] = 4;
-        arr[3] = 1;
-        arr[4] = 5;
-        Main.sort(arr, 5);
-        int i = 0;
-        while(i < 5) {
-            Output.print(arr[i]);
-            i++;
+
+        Array a1 = Array.new(5);    
+
+        for(int i=0; i<a1.size(); i++){
+            a1.set(i,i*10);
         }
-        return 0;
+
+        Output.printi(a1.get(3));
+
     }
 }
 
+class Array {
+    int data;
+    int size;
+
+    constructor new(int size_){
+        data = Memory.alloc(size_);
+        size = size_;
+    }
+
+    method set(int i, int val){
+        data[i] = val;
+    }
+
+    method get(int i){
+        return data[i];
+    }
+
+    method size(){
+        return size;
+    }
+
+
+}
 
 
 
@@ -343,6 +344,9 @@ void get_type_name(){
     name_table[name_table_index++].is_type = true;
 
     my_strcpy("Output", name_table[name_table_index].name, 64);
+    name_table[name_table_index++].is_type = true;
+
+    my_strcpy("Memory", name_table[name_table_index].name, 64);
     name_table[name_table_index++].is_type = true;
 
     tokenize_index = 0;
@@ -788,15 +792,36 @@ int parse_vardec(){
     nextToken(tmp, 64, false);  // [ 確認
     if(tmp[0] == '['){
         expect("[");
-        nextToken(tmp, 64, true);   //数値
-        array_size = my_str2int(tmp);
+        nextToken(tmp, 64, false);
+        if(tmp[0] != ']'){
+            nextToken(tmp, 64, true);   //サイズ
+            array_size = my_str2int(tmp);
+        }else{
+            array_size = 0;
+        }
         expect("]");
     }
 
     nextToken(tmp, 64, false);  // = 確認
     if(tmp[0]=='='){ 
         expect("=");
-        init = parse_expr();
+        if(array_size==-1)  init = parse_expr();
+        else{
+            int element=-1, element0=-1;
+            array_size = 0;
+            expect("{");
+            nextToken(tmp, 64, false);
+            while(tmp[0] != '}'){
+                if(array_size>0)    expect(",");
+                element = parse_expr();
+                if(init==-1)    init = element;
+                if(element0!=-1)    nodes[element0].next = element;
+                element0 = element;
+                array_size++;
+                nextToken(tmp, 64, false);
+            }
+            expect("}");
+        }
     }
     return new_vardec(id, type, 0, array_size, init);
 }
@@ -1164,6 +1189,22 @@ int parse_primary(){
     if( is_digit(tmp1[0]) ){ //数値
         nextToken(tmp1, 64, true);
         node = new_int(my_str2int(tmp1));
+    }else if(tmp1[0]=='\''){    //文字
+        expect("'");
+        nextToken(tmp1, 64, true);
+        if(tmp1[0] == '\''){    //空白
+            node = new_int(' ');
+        }else if(tmp1[0]=='\\'){
+            nextToken(tmp1, 64, true);
+            if(tmp1[0] == 'n')  node = new_int('\n');
+            if(tmp1[0] == '\\')  node = new_int('\\');
+            if(tmp1[0] == '\'') node = new_int('\'');
+            expect("'");
+        }else{
+            if(tmp1[1] != '\0') error_line = line_of_token(tokenize_index);
+            node = new_int(tmp1[0]);
+            expect("'");
+        }
     }else if( tmp1[0] == '(' ){  //式
         expect("(");
         node = parse_expr();
@@ -1339,6 +1380,8 @@ void print_binary(int index, int nest){
 
     print_main(nodes[index].left, nest+1);
     print_main(nodes[index].right, nest+1);
+    print_main(nodes[index].next, nest+1);
+
 }
 
 void print_unary(int index, int nest){
@@ -1353,6 +1396,7 @@ void print_unary(int index, int nest){
     std::cout << output << std::endl;
 
     print_main(nodes[index].left, nest+1);
+    print_main(nodes[index].next, nest);
 }
 
 void print_int(int index, int nest){
@@ -1366,6 +1410,8 @@ void print_int(int index, int nest){
     my_strcat(tmp, output, 128);
     my_strcat(")", output, 128);
     std::cout << output << std::endl;
+
+    print_main(nodes[index].next, nest);
 }
 
 void print_vardec(int index, int nest){
@@ -1779,24 +1825,57 @@ void compile_vardec(int index, char* dst, int dst_size){
     //初期値
     if( nodes[index].body != -1 ){
 
-        //初期値セット
-        compile_expr( nodes[index].body, dst, dst_size );
+        if( nodes[index].fourth == -1 ){    //スカラ
 
-        //代入
-        char tmp[12];
-        Vec2 i1 = ref_var( nodes[index].left );
+            //初期値セット
+            compile_expr( nodes[index].body, dst, dst_size );
 
-        if(i1.x==0){    //argument, local
-            if(func_var_table[i1.y].segment==0) my_strcat("pop argument ", dst, dst_size);
-            else    my_strcat("pop local ", dst, dst_size);
-            my_int2str(func_var_table[i1.y].index, tmp, 12);
-        }else{  //field, static
-            if(class_var_table[i1.y].segment==0) my_strcat("pop this ", dst, dst_size);
-            else    my_strcat("pop static ", dst, dst_size);
-            my_int2str(class_var_table[i1.y].index, tmp, 12);
+            //代入
+            char tmp[12];
+            Vec2 i1 = ref_var( nodes[index].left );
+
+            if(i1.x==0){    //argument, local
+                if(func_var_table[i1.y].segment==0) my_strcat("pop argument ", dst, dst_size);
+                else    my_strcat("pop local ", dst, dst_size);
+                my_int2str(func_var_table[i1.y].index, tmp, 12);
+            }else{  //field, static
+                if(class_var_table[i1.y].segment==0) my_strcat("pop this ", dst, dst_size);
+                else    my_strcat("pop static ", dst, dst_size);
+                my_int2str(class_var_table[i1.y].index, tmp, 12);
+            }
+            my_strcat(tmp, dst, dst_size);
+            my_strcat("\n", dst, dst_size);
+
+        }else{  //配列
+
+            int init = nodes[index].body;
+
+            std::cout << "debug1:" << std::endl;
+            for(int i=0; i<nodes[index].fourth; i++){
+
+                //初期値セット
+                compile_expr( init, dst, dst_size );
+
+                //ベースアドレス
+                char tmp[12];
+                my_strcat("push local ", dst, dst_size);
+                my_int2str(func_var_table[ ref_func_var( nodes[index].left ) ].index, tmp, 12);
+                my_strcat(tmp, dst, dst_size);
+                my_strcat("\n", dst, dst_size);
+
+                //インデックス
+                my_strcat("push const ", dst, dst_size);
+                my_int2str(i, tmp, 12);
+                my_strcat(tmp, dst, dst_size);
+                my_strcat("\n", dst, dst_size);
+
+                //代入
+                my_strcat("add\npop pointer 1\npop that 0\n", dst, dst_size);
+
+                init = nodes[init].next;
+            }
+
         }
-        my_strcat(tmp, dst, dst_size);
-        my_strcat("\n", dst, dst_size);
 
     }
 

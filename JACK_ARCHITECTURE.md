@@ -9,7 +9,8 @@ VM上で動作する高水準言語の仕様。クラスベースのオブジェ
 ```
 class Main {
     function main() {
-        Output.print(42);
+        Output.printi(42);
+        Output.printc('\n');
         return 0;
     }
 }
@@ -307,10 +308,32 @@ int x = arr[3];     // 読み出し
 
 ## 組み込み関数・クラス
 
-| 呼び出し | 動作 |
-|---|---|
-| `Output.print(expr)` | 式の値を数値として出力し、空白を追加 |
-| `Output.newline()` | 改行を出力 |
+### Outputクラス
+
+| 呼び出し | 引数 | 動作 |
+|---|---|---|
+| `Output.printi(expr)` | 整数 | 整数として出力 |
+| `Output.printc(expr)` | 整数（ASCIIコード） | ASCIIコードに対応する文字として出力 |
+
+### 文字リテラル
+
+`'A'` のような文字リテラルは、**コンパイラがASCIIコード（整数）に変換**する糖衣構文。
+内部では全て `int` として扱われる。
+
+| 記法 | 変換後の整数 | 意味 |
+|---|---|---|
+| `'A'` | 65 | 英字・記号 |
+| `' '` | 32 | 空白 |
+| `'\n'` | 10 | 改行 |
+| `'\\'` | 92 | バックスラッシュ |
+| `'\''` | 39 | シングルクォート |
+
+```
+Output.printi(42);       // 42 を整数として出力
+Output.printc('A');      // 65 として渡され、'A' として出力
+Output.printc(65);       // 上と等価
+Output.printc('\n');     // 10 として渡され、改行として出力
+```
 
 ---
 
@@ -382,8 +405,8 @@ class Main {
         v1 = Vector.new(3, 4);
         v2 = Vector.new(1, 2);
         v1.add(v2);
-        Output.print(v1.lengthSq());
-        Output.print(Vector.getCount());
+        Output.printi(v1.lengthSq());
+        Output.printi(Vector.getCount());
         return 0;
     }
 }
@@ -411,9 +434,9 @@ class Main {
         Counter b;
         a = Counter.new();
         b = Counter.new();
-        Output.print(a.getId());
-        Output.print(b.getId());
-        Output.print(a.getTotal());
+        Output.printi(a.getId());
+        Output.printi(b.getId());
+        Output.printi(a.getTotal());
         return 0;
     }
 }

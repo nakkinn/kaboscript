@@ -55,6 +55,7 @@ segment: `argument`, `local`, `static`, `const`, `this`, `that`, `pointer`, `tem
 | 命令 | 形式 | 動作 |
 |---|---|---|
 | `out` | `out` | スタックトップを数値として出力バッファに追加（spを1減らす） |
+| `outc` | `outc` | スタックトップを文字として出力バッファに追加（spを1減らす） |
 | `outstr` | `outstr <文字列>` | 文字列を出力バッファに追加（スタック不変） |
 | `outsp` | `outsp` | 空白を出力（スタック不変） |
 | `outnl` | `outnl` | 改行を出力（スタック不変） |
