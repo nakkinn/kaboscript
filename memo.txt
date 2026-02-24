@@ -44,3 +44,64 @@ virtual_machine.cpp を確認しました。以下が分析結果です。
 
   結論: 実質的なバグは #1（末尾改行なし問題） のみです。現在のスクリプトが常に '\n'
   で終わっていれば顕在化しませんが、潜在的に危険です。
+
+
+
+
+検証用プログラム
+
+class Calc {                                                                                  int val;                                                                            
+    static int count;                                                                                                                                                             
+    constructor new(int v) {                                                            
+        val = v;                                                                        
+        count++;
+    }
+
+    method add(int n) {
+        val += n;
+        return val;
+    }
+
+    method get() { return val; }
+
+    function getCount() { return count; }
+}
+
+class Main {
+    function main() {
+
+        // 算術・比較
+        Output.printi(3 + 4);    Output.printc(' ');  // 7
+        Output.printi(10 - 3);   Output.printc(' ');  // 7
+        Output.printi(3 * 4);    Output.printc(' ');  // 12
+        Output.printi(10 > 3);   Output.printc(' ');  // 1
+        Output.printi(10 == 9);  Output.printc(' ');  // 0
+
+        // ローカル変数・制御構文
+        int sum = 0;
+        for(int i = 1; i <= 5; i++) {
+            sum += i;
+        }
+        Output.printi(sum);  Output.printc(' ');  // 15
+
+        // 配列
+        int arr[3];
+        arr[0] = 10; arr[1] = 20; arr[2] = 30;
+        Output.printi(arr[1]);  Output.printc(' ');  // 20
+
+        // constructor + method + static
+        Calc c1;
+        Calc c2;
+        c1 = Calc.new(10);
+        c2 = Calc.new(20);
+        c1.add(5);
+        Output.printi(c1.get());          Output.printc(' ');  // 15
+        Output.printi(c2.get());          Output.printc(' ');  // 20
+        Output.printi(Calc.getCount());   Output.printc(' ');  // 2
+
+        return 0;
+    }
+}
+
+
+
